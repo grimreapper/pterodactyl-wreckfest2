@@ -1,47 +1,87 @@
 # Pterodactyl Wreckfest 2 dedicated-server egg
 
-A publication-ready PTDL_v2 egg for running the Wreckfest 2 dedicated server
-under Wine. This is an independent corrected packaging project and is not official Bugbear, Pterodactyl, or Pelican support.
+A hardened PTDL_v2 egg for running the Wreckfest 2 dedicated server under
+Wine. This is an independent corrected packaging project and is not official Bugbear, Pterodactyl, or Pelican support.
 
 The package uses Steam dedicated-server App ID `3519390`, writes `1203190` to
 `steam_appid.txt`, runs on `ghcr.io/pelican-eggs/yolks:wine_latest`, and installs
 with `ghcr.io/pelican-eggs/installers:debian`.
 
+## Validation status
+
+This exact hardened revision completed repeat disposable acceptance on
+2026-11-01 against Wreckfest 2 dedicated-server build 26269859 using a
+non-default assigned port. The accepted revision includes the stricter signal,
+regular-file, JSON-stream, and symlink-parent defenses added after the preceding
+candidate:
+
+- a clean anonymous install completed App 1007 followed by App 3519390, and
+  both manifests reported their exact application ID and complete state;
+- the non-empty `Wreckfest2.exe` process survived under Wine and bound its UDP
+  game listener on the assigned port;
+- the current process emitted both `Server is reachable from public network`
+  and `Server Started`, then remained stable through a five-minute soak without
+  an OOM kill or restart loop;
+- every exposed setting was applied, and all three JSON configuration files
+  (`server_config.scnf`, `server_cup_config.ccnl`, and `default_loop.becl`)
+  parsed successfully;
+- a controlled Pterodactyl restart changed the container start time, recovered
+  process readiness and the UDP game listener, and preserved every panel-managed
+  configuration value; and
+- reinstallation over the existing test volume preserved the operator-managed
+  configuration byte-for-byte, after which a fresh launch reached readiness.
+
+The game's own public-reachability signal passed. Server-browser discovery and
+a real remote client join/reconnect were not automated and remain unverified;
+this project does not claim a completed gameplay test. No game payload is
+distributed in this repository or its release archive.
+
 ## Import and setup
 
 1. In the Pterodactyl admin area, import `egg-wreckfest2.json` into the desired
    nest.
-2. Create a server from the egg and assign its default allocation. The required
-   game port is `30100/UDP`; publish that UDP allocation through the host
-   firewall and any upstream network controls.
-3. Leave the locked Steam application variables unchanged. No Steam account,
-   login credential, or beta password is required.
-4. Start the server. The panel considers it ready when the tailed
-   `server.log` emits `Server Started`.
+2. Create a server from the egg and assign its default allocation. The game uses
+   that assigned UDP port. `30100/UDP` is the conventional default example, but
+   the live acceptance used a non-default port. Permit the selected UDP
+   allocation through the host firewall and any upstream network controls.
+3. No Steam account, login credential, or beta password is accepted by this
+   egg; installation is anonymous and uses fixed application IDs.
+4. Start the server. The configured panel marker is the tailed `server.log`
+   text `Server Started`; that marker is not a substitute for listener and
+   public-reachability checks. Browser discovery and client join/reconnect
+   remain explicit operator verification items.
 
 The egg maps the game's port to the panel's default allocation port. It does not
-embed an address or substitute a fixed live allocation.
+embed an address or substitute a fixed live allocation. Pterodactyl/Wings may
+publish both TCP and UDP host mappings for an allocation, but live process
+inspection showed the Wreckfest 2 game service listening on UDP only; a host TCP
+proxy is not evidence of a TCP game service.
 
 ## Anonymous installation and updates
 
-Anonymous SteamCMD installation succeeds only after forcing the Windows
-platform and installing App 1007 before App 3519390. This exact order was
-independently verified against build 26269859. Each SteamCMD invocation must
-succeed, and installation remains failed unless both `Wreckfest2.exe` and
-`steamapps/appmanifest_3519390.acf` exist afterward. The App 1007 manifest is
-also required before the App 3519390 invocation begins.
+The installer forces the Windows platform and installs App 1007 before App
+3519390. The preceding 2026-11-01 candidate installed build 26269859. Each
+anonymous SteamCMD invocation must succeed, each exact manifest must report
+complete state, and installation remains failed unless a non-empty regular
+`Wreckfest2.exe` exists afterward. The complete App 1007 manifest is required
+before the App 3519390 invocation begins. A preserved `server_config.scnf` must
+remain one non-empty, regular, non-symlink JSON object or reinstallation fails
+closed instead of reporting false success.
 
 The release pins the SteamCMD bootstrap archive to SHA-256
 `cebf0046bfd08cf45da6bc094ae47aa39ebf4155e5ede41373b579b8f1071e7c` and
 caps its download at 10 MiB. That exact archive was retrieved from the existing
 HTTPS URL and measured at 2,428,561 bytes on 2026-10-31. The installer restricts
-the initial request and redirects to HTTPS, then verifies the pinned digest
-before extraction. If Valve changes the archive, maintainers must verify the new archive and release a new hash rather than bypassing the check.
+the initial request and redirects to HTTPS, then verifies both that exact size
+and the pinned digest before extraction. If Valve changes the archive,
+maintainers must verify the new archive and release a new hash and size
+rather than bypassing the check.
 
-With `AUTO_UPDATE=1`, the Wine runtime image follows the same anonymous update
-order: App 1007, then App 3519390. The egg intentionally exposes no account
-credentials, beta secrets, arbitrary SteamCMD flags, download URLs, shell
-fragments, or startup-command overrides.
+Pterodactyl runs the installer for installation and reinstall operations; the
+runtime startup script does not claim to update game content. The egg
+intentionally exposes no nonfunctional update toggle, account credentials,
+beta secrets, arbitrary SteamCMD flags, download URLs, shell fragments, or
+startup-command overrides.
 
 ## Configuration and data paths
 
@@ -61,10 +101,6 @@ the panel has a valid file to edit before the first launch.
 
 | Variable | Default | Editable | Purpose and validation |
 | --- | --- | --- | --- |
-| `SRCDS_APPID` | `3519390` | No, hidden | Locked dedicated-server application ID. |
-| `STEAM_APPID_FILE` | `1203190` | No, hidden | Locked application ID written for the game process. |
-| `WINDOWS_INSTALL` | `1` | No, hidden | Locks SteamCMD and the runtime to the Windows server payload. |
-| `AUTO_UPDATE` | `1` | Yes | Boolean; anonymously updates the SDK redistributable before the game server. |
 | `SERVER_NAME` | `Wreckfest 2 Server` | Yes | Required text, at most 32 characters. |
 | `SERVER_DESCRIPTION` | `Welcome to Wreckfest 2!` | Yes | Required text, at most 512 characters. |
 | `SERVER_PASSWORD` | empty | Yes | Optional server password, at most 32 characters. |

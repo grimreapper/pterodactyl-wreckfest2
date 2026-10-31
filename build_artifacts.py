@@ -73,36 +73,6 @@ def egg_document() -> dict[str, object]:
     }
     variables = [
         variable(
-            "SRCDS_APPID",
-            "Locked Wreckfest 2 dedicated-server Steam application ID.",
-            "3519390",
-            "required|string|in:3519390",
-            visible=False,
-            editable=False,
-        ),
-        variable(
-            "STEAM_APPID_FILE",
-            "Locked Steam application ID written for the game process.",
-            "1203190",
-            "required|string|in:1203190",
-            visible=False,
-            editable=False,
-        ),
-        variable(
-            "WINDOWS_INSTALL",
-            "Locked switch requiring the Windows server payload for Wine.",
-            "1",
-            "required|string|in:1",
-            visible=False,
-            editable=False,
-        ),
-        variable(
-            "AUTO_UPDATE",
-            "When enabled, anonymously update App 1007 and then App 3519390 before launch.",
-            "1",
-            "required|boolean",
-        ),
-        variable(
             "SERVER_NAME",
             "Public server name; limited to 32 characters.",
             "Wreckfest 2 Server",
