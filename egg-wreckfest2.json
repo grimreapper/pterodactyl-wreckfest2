@@ -1,0 +1,152 @@
+{
+    "_comment": "DO NOT EDIT: generated from the readable sources in this repository.",
+    "meta": {
+        "version": "PTDL_v2",
+        "update_url": null
+    },
+    "exported_at": "2026-10-31T14:09:25+00:00",
+    "name": "Wreckfest 2",
+    "author": "community@example.invalid",
+    "description": "Wreckfest 2 dedicated server under Wine with anonymous SteamCMD installation.",
+    "features": null,
+    "docker_images": {
+        "Wine Latest": "ghcr.io/pelican-eggs/yolks:wine_latest"
+    },
+    "file_denylist": [],
+    "startup": "bash ./start.sh",
+    "config": {
+        "files": "{\"save/server_config.scnf\":{\"parser\":\"json\",\"find\":{\"net server config.0.name\":\"{{server.build.env.SERVER_NAME}}\",\"net server config.0.description\":\"{{server.build.env.SERVER_DESCRIPTION}}\",\"net server config.0.password\":\"{{server.build.env.SERVER_PASSWORD}}\",\"net server config.0.game port\":\"{{server.build.default.port}}\",\"game server config.0.event loop name\":\"{{server.build.env.EVENT_LOOP_NAME}}\",\"game server config.0.cup list\":\"{{server.build.env.CUP_LIST}}\",\"game server config.0.countdown time\":\"{{server.build.env.COUNTDOWN_TIME_MS}}\",\"game server config.0.voting time\":\"{{server.build.env.VOTING_TIME_MS}}\",\"game server config.0.flags\":\"{{server.build.env.SERVER_FLAGS}}\"}}}",
+        "startup": "{\"done\":\"Server Started\"}",
+        "logs": "{\"custom\":true,\"location\":\"server.log\"}",
+        "stop": "^C"
+    },
+    "scripts": {
+        "installation": {
+            "script": "#!/bin/bash\nset -Eeuo pipefail\n\nSERVER_DIR=/mnt/server\nSTEAMCMD_DIR=\"${SERVER_DIR}/steamcmd\"\nWORK_DIR=\"$(mktemp -d)\"\nSTART_TMP=\"${WORK_DIR}/start.sh\"\nCONFIG_TMP=\"${WORK_DIR}/server_config.scnf\"\nSTEAMCMD_ARCHIVE=\"${WORK_DIR}/steamcmd_linux.tar.gz\"\nSTEAMCMD_ARCHIVE_SHA256=\"cebf0046bfd08cf45da6bc094ae47aa39ebf4155e5ede41373b579b8f1071e7c\"\n\ncleanup() {\n    rm -rf -- \"${WORK_DIR}\"\n}\ntrap cleanup EXIT\n\nmkdir -p \"${SERVER_DIR}\" \"${STEAMCMD_DIR}\"\n\ncurl \\\n    --fail \\\n    --location \\\n    --proto '=https' \\\n    --proto-redir '=https' \\\n    --show-error \\\n    --silent \\\n    --retry 5 \\\n    --retry-all-errors \\\n    --retry-delay 2 \\\n    --connect-timeout 20 \\\n    --max-time 300 \\\n    --max-filesize 10485760 \\\n    --output \"${STEAMCMD_ARCHIVE}\" \\\n    https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz\n\nprintf '%s  %s\\n' \"${STEAMCMD_ARCHIVE_SHA256}\" \"${STEAMCMD_ARCHIVE}\" | sha256sum --check --status\ntar --extract --gzip --file \"${STEAMCMD_ARCHIVE}\" --directory \"${STEAMCMD_DIR}\" --no-same-owner --no-same-permissions\nSTEAMCMD=\"${STEAMCMD_DIR}/steamcmd.sh\"\n[[ -x \"${STEAMCMD}\" ]] || {\n    echo \"SteamCMD was not installed correctly.\" >&2\n    exit 1\n}\n\n\"${STEAMCMD}\" \\\n    +@sSteamCmdForcePlatformType windows \\\n    +force_install_dir \"${SERVER_DIR}\" \\\n    +login anonymous \\\n    +app_update 1007 validate \\\n    +quit\n\n[[ -f \"${SERVER_DIR}/steamapps/appmanifest_1007.acf\" ]] || {\n    echo \"Required Steamworks SDK redistributable manifest is missing.\" >&2\n    exit 1\n}\n\n\"${STEAMCMD}\" \\\n    +@sSteamCmdForcePlatformType windows \\\n    +force_install_dir \"${SERVER_DIR}\" \\\n    +login anonymous \\\n    +app_update 3519390 validate \\\n    +quit\n\nmkdir -p \"${SERVER_DIR}/.steam/sdk32\" \"${SERVER_DIR}/.steam/sdk64\"\nif [[ -f \"${STEAMCMD_DIR}/linux32/steamclient.so\" ]]; then\n    install -m 0644 \"${STEAMCMD_DIR}/linux32/steamclient.so\" \\\n        \"${SERVER_DIR}/.steam/sdk32/steamclient.so\"\nfi\nif [[ -f \"${STEAMCMD_DIR}/linux64/steamclient.so\" ]]; then\n    install -m 0644 \"${STEAMCMD_DIR}/linux64/steamclient.so\" \\\n        \"${SERVER_DIR}/.steam/sdk64/steamclient.so\"\nfi\n\ncat > \"${START_TMP}\" <<'WF2_START_SH'\n#!/bin/bash\nset -Eeuo pipefail\n\ncd /home/container\nmkdir -p save\nprintf '1203190\\n' > steam_appid.txt\n\n: > server.log\ntail -n 0 -F server.log &\ntail_pid=$!\nxvfb_pid=\"\"\nwine_pid=\"\"\n\ncleanup() {\n    local exit_status=$?\n    trap - EXIT INT TERM\n\n    for helper_pid in \"${tail_pid}\" \"${xvfb_pid}\"; do\n        if [[ -n \"${helper_pid}\" ]] && kill -0 \"${helper_pid}\" 2>/dev/null; then\n            kill \"${helper_pid}\" 2>/dev/null || true\n        fi\n    done\n    wait \"${tail_pid}\" 2>/dev/null || true\n    if [[ -n \"${xvfb_pid}\" ]]; then\n        wait \"${xvfb_pid}\" 2>/dev/null || true\n    fi\n    exit \"${exit_status}\"\n}\n\nforward_signal() {\n    if [[ -n \"${wine_pid}\" ]] && kill -0 \"${wine_pid}\" 2>/dev/null; then\n        kill -TERM \"${wine_pid}\" 2>/dev/null || true\n    fi\n}\n\ntrap cleanup EXIT\ntrap forward_signal INT TERM\n\nXvfb :99 -screen 0 1024x768x24 -nolisten tcp > /tmp/wreckfest2-xvfb.log 2>&1 &\nxvfb_pid=$!\nexport DISPLAY=:99\nsleep 1\nif ! kill -0 \"${xvfb_pid}\" 2>/dev/null; then\n    echo \"Xvfb failed to start.\" >&2\n    exit 1\nfi\n\nwine ./Wreckfest2.exe --server --save-dir=\"$(winepath -w /home/container/save)\" &\nwine_pid=$!\nset +e\nwait \"${wine_pid}\"\nwine_status=$?\nset -e\nexit \"${wine_status}\"\nWF2_START_SH\n\ncat > \"${CONFIG_TMP}\" <<'WF2_SERVER_CONFIG'\n{\n  \"net server config\": [\n    {\n      \"name\": \"Wreckfest 2 Server\",\n      \"description\": \"Welcome to Wreckfest 2!\",\n      \"password\": \"\",\n      \"log file name\": \"../server.log\",\n      \"game port\": 30100\n    }\n  ],\n  \"game server config\": [\n    {\n      \"cup list\": \"\",\n      \"event loop name\": \"default_loop\",\n      \"countdown time\": 100000,\n      \"voting time\": 20000,\n      \"flags\": \"\",\n      \"auto ban report limits\": [\n        {\n          \"censor report limit\": 2,\n          \"silence report limit\": 4,\n          \"suspend report limit\": 8\n        }\n      ],\n      \"server ban durations\": [\n        {\n          \"censor duration\": 1440,\n          \"silence duration\": 1440,\n          \"suspend duration\": 525600\n        }\n      ],\n      \"admin ban durations\": [\n        {\n          \"censor duration\": 1440,\n          \"silence duration\": 1440,\n          \"suspend duration\": 525600\n        }\n      ],\n      \"default ban durations\": [\n        {\n          \"censor duration\": 1440,\n          \"silence duration\": 1440,\n          \"suspend duration\": 525600\n        }\n      ]\n    }\n  ]\n}\nWF2_SERVER_CONFIG\n\ninstall -m 0755 \"${START_TMP}\" \"${SERVER_DIR}/start.sh\"\nmkdir -p \"${SERVER_DIR}/save\"\nif [[ ! -e \"${SERVER_DIR}/save/server_config.scnf\" ]]; then\n    install -m 0644 \"${CONFIG_TMP}\" \"${SERVER_DIR}/save/server_config.scnf\"\nfi\nprintf '1203190\\n' > \"${SERVER_DIR}/steam_appid.txt\"\n\n[[ -f \"${SERVER_DIR}/Wreckfest2.exe\" ]] || {\n    echo \"Required server executable is missing.\" >&2\n    exit 1\n}\n[[ -f \"${SERVER_DIR}/steamapps/appmanifest_3519390.acf\" ]] || {\n    echo \"Required Steam application manifest is missing.\" >&2\n    exit 1\n}\n[[ -x \"${SERVER_DIR}/start.sh\" ]] || {\n    echo \"Runtime start script is missing or not executable.\" >&2\n    exit 1\n}\n[[ -s \"${SERVER_DIR}/steam_appid.txt\" ]] || {\n    echo \"Steam application ID file is missing.\" >&2\n    exit 1\n}\n\necho \"Installation complete: Wreckfest 2 dedicated server is ready.\"\n",
+            "container": "ghcr.io/pelican-eggs/installers:debian",
+            "entrypoint": "bash"
+        }
+    },
+    "variables": [
+        {
+            "name": "Srcds Appid",
+            "description": "Locked Wreckfest 2 dedicated-server Steam application ID.",
+            "env_variable": "SRCDS_APPID",
+            "default_value": "3519390",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "required|string|in:3519390",
+            "field_type": "text"
+        },
+        {
+            "name": "Steam Appid File",
+            "description": "Locked Steam application ID written for the game process.",
+            "env_variable": "STEAM_APPID_FILE",
+            "default_value": "1203190",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "required|string|in:1203190",
+            "field_type": "text"
+        },
+        {
+            "name": "Windows Install",
+            "description": "Locked switch requiring the Windows server payload for Wine.",
+            "env_variable": "WINDOWS_INSTALL",
+            "default_value": "1",
+            "user_viewable": false,
+            "user_editable": false,
+            "rules": "required|string|in:1",
+            "field_type": "text"
+        },
+        {
+            "name": "Auto Update",
+            "description": "When enabled, anonymously update App 1007 and then App 3519390 before launch.",
+            "env_variable": "AUTO_UPDATE",
+            "default_value": "1",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|boolean",
+            "field_type": "text"
+        },
+        {
+            "name": "Server Name",
+            "description": "Public server name; limited to 32 characters.",
+            "env_variable": "SERVER_NAME",
+            "default_value": "Wreckfest 2 Server",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Server Description",
+            "description": "Public server description; limited to 512 characters.",
+            "env_variable": "SERVER_DESCRIPTION",
+            "default_value": "Welcome to Wreckfest 2!",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:512",
+            "field_type": "text"
+        },
+        {
+            "name": "Server Password",
+            "description": "Optional join password; limited to 32 characters.",
+            "env_variable": "SERVER_PASSWORD",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:32",
+            "field_type": "text"
+        },
+        {
+            "name": "Event Loop Name",
+            "description": "A bare filename stem with no extension or path: start with a letter or digit and use only letters, digits, underscores, or hyphens; maximum 64 characters.",
+            "env_variable": "EVENT_LOOP_NAME",
+            "default_value": "default_loop",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|string|max:64|regex:/\\A[a-zA-Z0-9][a-zA-Z0-9_-]*\\z/",
+            "field_type": "text"
+        },
+        {
+            "name": "Cup List",
+            "description": "Optional alternate cup-list filename: a safe basename with an optional .ccnl suffix and no path; maximum 128 characters.",
+            "env_variable": "CUP_LIST",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:128|regex:/\\A[a-zA-Z0-9][a-zA-Z0-9_-]*(?:\\.ccnl)?\\z/",
+            "field_type": "text"
+        },
+        {
+            "name": "Countdown Time Ms",
+            "description": "Countdown duration in milliseconds, from 30,000 through 500,000.",
+            "env_variable": "COUNTDOWN_TIME_MS",
+            "default_value": "100000",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:30000|max:500000",
+            "field_type": "text"
+        },
+        {
+            "name": "Voting Time Ms",
+            "description": "Voting duration in milliseconds, from 10,000 through 30,000.",
+            "env_variable": "VOTING_TIME_MS",
+            "default_value": "20000",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "required|integer|min:10000|max:30000",
+            "field_type": "text"
+        },
+        {
+            "name": "Server Flags",
+            "description": "Optional recognized phrases: leader enabled; idle kicker disabled; race end timer disabled; event loop disabled; hide default user liveries; disable auto-admin. Unknown tokens are silently ignored. Limited to 255 characters.",
+            "env_variable": "SERVER_FLAGS",
+            "default_value": "",
+            "user_viewable": true,
+            "user_editable": true,
+            "rules": "nullable|string|max:255",
+            "field_type": "text"
+        }
+    ]
+}
